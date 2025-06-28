@@ -10,6 +10,7 @@
 #include <wafel/ios/svc.h>
 
 #define UMS_PROCESS_IDX 47
+#define DEVTYPE_MLC 0x5
 
 int (*MCP_IVS_stuff)(void) = (void*)(0x0501c238|1);
 int (*MCP_MountWithSubdir)(char*, char*, char *, void*) = (void*) 0x05015c7c;
@@ -116,6 +117,14 @@ void ums_entry_hook(trampoline_state* regs){
     debug_printf("FSUMSServerEntry\n");
 }
 
+void ums_devtype_hook(trampoline_state *regs){
+    static bool first = true;
+    if(first){
+        regs->r[3] = DEVTYPE_MLC;
+        first = false;
+    }
+}
+
 #define PROCESS_SIZE 0x58
 
 typedef struct proccess_struct {
@@ -195,7 +204,7 @@ void kern_main()
     trampoline_hook_before(0x1077dda4, ums_mcp_open_hook);
     trampoline_hook_before(0x1070077c, ums_entry_hook);
     // change type to MLC
-    ASM_PATCH_K(0x1077eda0, "mov r3,#5");
+    trampoline_hook_before(0x1077edac, ums_devtype_hook);
 
     // ignore IVS error
     // ASM_PATCH_K(0x1077dda8, "nop");
