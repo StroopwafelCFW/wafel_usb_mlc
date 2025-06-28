@@ -206,6 +206,9 @@ void kern_main()
     ASM_PATCH_K(0x1077ddac, "mov r0, #0"); // MCP_Ioctl0x7e(handle)
     ASM_PATCH_K(0x1077df44, "nop"); // MCP_Close(handle)
     ASM_PATCH_K(0x1077dfd4, "nop"); // MCP_Close(handle)
+ 
+    // Use crypto handle for USB (0x12) for the mlc type (originally 0x11)
+    ASM_PATCH_K(0x1074362c, "moveq r3, #0x12");
 
 
     trampoline_t_hook_before(0x050158dc, tm_OpenDir_hook);
