@@ -203,9 +203,6 @@ void kern_main()
 
     trampoline_t_hook_before(0x050227cc, pm_resume_preloop_hook);
 
-    // reboot instead of reload
-    ASM_T_PATCH_K(0x0501f578, "add r2, #4");
-
 
     // hai should always use USB
     trampoline_t_blreplace(0x051001d6, hai_path_sprintf_hook_force_usb);
@@ -233,6 +230,9 @@ void kern_main()
     // NOP out org SLC mount
     //ASM_T_PATCH_K(0x05027cc8, "nop\nnop");
 
+    // Force UHS to reinit, even on reload
+    ASM_PATCH_K(0x10100c90, "nop");
+    ASM_PATCH_K(0x10100cb8, "nop");
 
     trampoline_hook_before(0x1077dda4, ums_mcp_open_hook);
     trampoline_hook_before(0x1070077c, ums_entry_hook);
