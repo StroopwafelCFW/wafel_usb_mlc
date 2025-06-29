@@ -176,14 +176,6 @@ static void hai_read_devid_snprintf_hook(trampoline_t_state *regs){
     regs->r[3] = regs->r[4];
 }
 
-int(*setClientCapabilities)(u32, u32, u64*) = (void*)0x0505960c;
-
-static int setClientCapabilities_hook(){
-    static u64 everything = 0xffffffffffffffffllu;
-    int res = setClientCapabilities(1, 0xb, &everything);
-    debug_printf("setClientCapabilities returned %d\n", res);
-}
-
 // This fn runs before everything else in kernel mode.
 // It should be used to do extremely early patches
 // (ie to BSP and kernel, which launches before MCP)
@@ -210,7 +202,6 @@ void kern_main()
     // also set umsBlkDevID for /dev/mlc01
     ASM_T_PATCH_K(0x05100054, "nop\nnop");
 
-    trampoline_t_blreplace(0x05100054, setClientCapabilities_hook);
     trampoline_t_hook_before(0x050083ac, hai_read_devid_result_hook);
     trampoline_t_hook_before(0x05100062, hai_read_devid_snprintf_hook);
 
