@@ -29,13 +29,13 @@ static bool shutdown_from_hai = false;
 static u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
 int resume_process(u32 pidx){
     int mode=*(int*)0x050b7fc8;
-    int parm2=*(int*)0x050b7fc4;
+    int flags=*(int*)0x050b7fc4;
     u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
     u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*pidx;
     int resource_handle_id = *(int*)(IOS_Process_Struct_base + 8);
     *(int*)(IOS_Process_Struct_base + 0x10) = 5;
     *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
-    int res = iosIpcResume(resource_handle_id, mode, parm2);
+    int res = iosIpcResume(resource_handle_id, mode, flags);
     debug_printf("Manually resuming Process %d returned %d\n", pidx, res);
     return res;
 }
