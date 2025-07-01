@@ -57,7 +57,7 @@ int suspend_process(u32 pidx) {
 }
 
 void pm_system_resume_hook(trampoline_t_state *regs){
-    debug_printf("Calling IOS_ResumeAsync(%u, %u, %u, %u, %u)\n", regs->r[0], regs->r[1], regs->r[2], regs->r[3], regs->stack[0]);
+    debug_printf("Calling IOS_ResumeAsync(%u, %p, %p, %u, %u)\n", regs->r[0], regs->r[1], regs->r[2], regs->r[3], regs->stack[0]);
 }
 
 void pm_resume_count_hook(trampoline_t_state * regs){
