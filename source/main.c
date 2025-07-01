@@ -26,17 +26,20 @@ int (*wait_for_dev)(const char*, u32) = (void*)(0x05016cd8|1);
 static bool shutdown_from_hai = false;
 
 int (*IOS_ResumeAsync)(int, int, int, void*, void*) = (void*)0x05056a1c;
-int resume_process(u32 i){
+int resume_process(u32 pidx){
     int parm1=*(int*)0x050b7fc8;
     int parm2=*(int*)0x050b7fc4;
     void *PM_MsgQueue = *(void**)0x05070a70;
     u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
-    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*i;
+    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*pidx;
     int resource_handle_id = *(int*)(IOS_Process_Struct_base + 8);
     void* async_notify_request = *(void**)(IOS_Process_Struct_base + 0xc);
     *(int*)(IOS_Process_Struct_base + 0x10) = 5;
     *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
-    return iosIpcResume(resource_handle_id, parm1, parm2);
+    const char* name = *(char**)(IOS_Process_Struct_base + 0x50);
+    int res = iosIpcResume(resource_handle_id, parm1, parm2);
+    debug_printf("Manually resuming Process %d (%s) returned %d\n", pidx, name, res);
+    return res;
     //return IOS_ResumeAsync(resource_handle_id, parm1, parm2, PM_MsgQueue, async_notify_request);
 }
 
@@ -74,50 +77,15 @@ void pm_resume_count_hook(trampoline_t_state * regs){
     }
 
     if(pidx == 4 && shutdown_from_hai){
-        //msleep(3000);
         *MCP_PM_mode_init = 0x8000;
         debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
     }
-    //msleep(3000);
 
     regs->r[0] = regs->r[2];
-
-    // if(regs->r[2] == 33){
-    //     //int mcp_handle = iosOpen("/dev/mcp", 0);
-    //     // debug_printf("mcp_handle: %d\n", mcp_handle);
-    //     // if(mcp_handle>0){
-    //     //     int io_res = iosIoctl(mcp_handle, 0x7e, NULL, 0, 0, 0);
-    //     //     debug_printf("IOCTL 0x7e returned %d\n", io_res);
-    //     // }
-    //     msleep(1000);
-    //     int res = resume_process(UMS_PROCESS_IDX);
-    //     debug_printf("Manually resuming UMS returned %d\n", res);
-    //     //msleep(10000);
-    // }
-    // skip UMS, since it was already started by MCP
-    // if(regs->r[2] == UMS_PROCESS_IDX-1)
-    //     regs->r[2]++;
 }
 
 void pm_resume_offset_hook(trampoline_t_state *regs){
-    // resume 47 before 34 and then skip it later
     int just_resumed = regs->r[0];
-    // switch (just_resumed)
-    // {
-    //     case 33:
-    //         regs->r[3] = 0x58 * 46;
-    //         regs->r[2] = 0x28 + 0x58 * 46;
-    //         break;
-    //     case 34:
-    //         regs->r[3] = 0x58 * 33;
-    //         regs->r[2] = 0x28 + 0x58 * 33;
-    //         break;
-    //     case 46:
-    //         regs->r[3] -= 0x58;
-    //         regs->r[2] -= 0x58;
-    //         break;
-    // }
-
     debug_printf("resumed %d, r3: %p, r2: %p\n", just_resumed, regs->r[3], regs->r[2]);
 }
 
@@ -192,20 +160,6 @@ typedef struct proccess_struct {
     u8 buff[PROCESS_SIZE];
 } PACKED proccess_struct;
 
-void reorder_processes(void){
-    proccess_struct buff;
-    proccess_struct *process_array = (void*)0x050711b0;
-    memcpy(&buff, process_array + 47, PROCESS_SIZE);
-    // for(int i=47; i>33; i--){
-    //     debug_printf("copy process struct from %p to %p\n", process_array+i-1, process_array+i);
-    //     memcpy(process_array+i, process_array+i-1, PROCESS_SIZE);
-    // }
-    memcpy(process_array+33, &buff, PROCESS_SIZE);
-}
-
-void pm_resume_preloop_hook(trampoline_t_state *regs){
-    //reorder_processes();
-}
 
 void tm_OpenDir_hook(trampoline_t_state* regs){
     debug_printf("TitleManager opening dir: %s\n", regs->r[1]);
@@ -254,8 +208,6 @@ void kern_main()
 
     trampoline_t_hook_before(0x050229e2, pm_resume_offset_hook);
 
-    trampoline_t_hook_before(0x050227cc, pm_resume_preloop_hook);
-
     trampoline_t_hook_before(0x05023084, pm_suspend_params_hook);
     trampoline_t_hook_before(0x050232a4, pm_suspend_count_hook);
 
@@ -268,16 +220,7 @@ void kern_main()
     trampoline_t_hook_before(0x050083ac, hai_read_devid_result_hook);
     trampoline_t_hook_before(0x05100062, hai_read_devid_snprintf_hook);
 
-    //ASM_T_PATCH_K(0x0502317c, "nop\nnop");
-
-    // Disable Panic in Kernel
-    //ASM_PATCH_K(0x08129ce0, "bx lr\n");
-
     trampoline_t_blreplace(0x05027d18, mcp_mlc_wait_hook);
-    //U32_PATCH_K(0x05066b9c+4, *(u32*)"/usb");
-
-    //U32_PATCH_K(0x108015b0, *(u32*)"mlc");
-
     trampoline_t_blreplace(0x05027d54, mcp_mlc_mount_hook);
     trampoline_t_hook_before(0x050283aa, mcp_mlc_unmount_after_hook);
 
@@ -294,10 +237,6 @@ void kern_main()
     // change type to MLC
     trampoline_hook_before(0x1077edac, ums_devtype_hook);
 
-    // ignore IVS error
-    // ASM_PATCH_K(0x1077dda8, "nop");
-    // ASM_PATCH_K(0x1077ddb4, "nop");
-
     // Patch out MCP dependency of UMS. IVS Stuff need to be called elsewhere
     ASM_PATCH_K(0x1077dda0, "mov r0, #0"); // handle = MCP_open()
     ASM_PATCH_K(0x1077ddac, "mov r0, #0"); // MCP_Ioctl0x7e(handle)
@@ -311,17 +250,8 @@ void kern_main()
     ASM_PATCH_K(0x10700044, "mov r0,#1 \n bx lr");
 
 
-    trampoline_t_hook_before(0x050158dc, tm_OpenDir_hook);
-    trampoline_t_hook_before(0x05015850, tm_scan_hook);
-
-
-    // trampoline_hook_before(0xe100eb50, nsec_read_file_hook);
-    // trampoline_hook_before(0xe100d7c8, nsec_cerstore_hook);
-
-    //ASM_PATCH_K(0xe100d7c4, "mov r0, #0");
-
-    // don't start PPC
-    //ASM_T_PATCH_K(0x050340ee, "mov r0, #0\nnop")
+    // trampoline_t_hook_before(0x050158dc, tm_OpenDir_hook);
+    // trampoline_t_hook_before(0x05015850, tm_scan_hook);
 
     boot_info_t *boot_info = (boot_info_t*)0x050a443b;
     size_t boot_info_size;
