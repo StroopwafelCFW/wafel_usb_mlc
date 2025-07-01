@@ -39,6 +39,20 @@ void pm_resume_count_hook(trampoline_t_state * regs){
     u32 pidx = regs->r[2];
     char * name = *(char**)(0x050711b0 + 0x58*pidx +0x50);
     debug_printf("Resumed Process %d: %s\n", pidx, name);
+
+    u32 *MCP_PM_mode_init =(u32*)0x0508775c;
+    debug_printf("MCP_PM_mode_init: %p\n", *MCP_PM_mode_init);
+
+    if(pidx == 1 && shutdown_from_hai){
+        *MCP_PM_mode_init = 0x100000;
+        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+    }
+
+    if(pidx == 4 && shutdown_from_hai){
+        //msleep(3000);
+        *MCP_PM_mode_init = 0x8000;
+        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+    }
     //msleep(3000);
 
     regs->r[0] = regs->r[2];
