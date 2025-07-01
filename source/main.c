@@ -96,6 +96,22 @@ void pm_resume_offset_hook(trampoline_t_state *regs){
     debug_printf("resumed %d, r3: %p, r2: %p\n", just_resumed, regs->r[3], regs->r[2]);
 }
 
+void pm_suspend_params_hook(trampoline_t_state *regs){
+    suspend_mode = regs->r[0];
+    suspend_flags = regs->r[1];
+}
+
+void pm_suspend_count_hook(trampoline_t_state *regs){
+    int pidx = regs->r[2];
+    if(pidx == UMS_PROCESS_IDX || pidx == 36){
+        debug_printf("Skipping suspend of process %d\n", regs->r[2]);
+        regs->r[2]--;
+        regs->r[3]-=0x58;
+    } else {
+        debug_printf("Count Hook: Suspending process pidx %d\n", pidx);
+    }
+}
+
 void ioctl_7e_hook(trampoline_t_state * regs){
     int slc_res = wait_for_dev("/dev/slc01",15000000);
     debug_printf("Waiting for slc returned %d\n", slc_res);
@@ -121,6 +137,12 @@ int mcp_mlc_mount_hook(char* dev, char* bind_dir, char* mount_point, int owner, 
     int res = org_mount(dev, bind_dir, mount_point, owner);
     debug_printf("MCP_MountWithSubdir(%s, %s, %s, %d) -> %d\n", dev, bind_dir, mount_point, owner, res);
     return res;
+}
+
+void mcp_mlc_unmount_after_hook(trampoline_t_state *regs){
+    debug_printf("MCP MLC Unmount returned %d\n", regs->r[0]);
+    suspend_process(UMS_PROCESS_IDX);
+    suspend_process(36);
 }
 
 void ums_mcp_open_hook(trampoline_state *regs){
@@ -209,6 +231,8 @@ void kern_main()
 
     trampoline_t_hook_before(0x050227cc, pm_resume_preloop_hook);
 
+    trampoline_t_hook_before(0x05023084, pm_suspend_params_hook);
+    trampoline_t_hook_before(0x050232a4, pm_suspend_count_hook);
 
     // hai should always use USB
     trampoline_t_blreplace(0x051001d6, hai_path_sprintf_hook_force_usb);
@@ -230,6 +254,7 @@ void kern_main()
     //U32_PATCH_K(0x108015b0, *(u32*)"mlc");
 
     trampoline_t_blreplace(0x05027d54, mcp_mlc_mount_hook);
+    trampoline_t_hook_before(0x050283aa, mcp_mlc_unmount_after_hook);
 
     //trampoline_t_hook_before(0x05024ea4, ioctl_7e_hook);
     // NOP out org SLC mount
@@ -272,6 +297,17 @@ void kern_main()
 
     // don't start PPC
     //ASM_T_PATCH_K(0x050340ee, "mov r0, #0\nnop")
+
+    boot_info_t *boot_info = (boot_info_t*)0x050a443b;
+    size_t boot_info_size;
+    int res = prsh_get_entry("boot_info", (void**)&boot_info, &boot_info_size);
+    if(res>=0 && boot_info_size>=12){
+        shutdown_from_hai = boot_info->boot_state & 0x00100000;
+        debug_printf("boot_state: %p\n", boot_info->boot_state);
+    }
+    else {
+        debug_printf("No valid boot_info found: %d, %p, %p\n", res, boot_info, boot_info_size);
+    }
 
     debug_printf("done\n");
 }
