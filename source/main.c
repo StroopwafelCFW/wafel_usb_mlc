@@ -8,13 +8,22 @@
 #include <wafel/ios/thread.h>
 #include <wafel/patch.h>
 #include <wafel/ios/svc.h>
+#include <wafel/ios/prsh.h>
 
 #define UMS_PROCESS_IDX 47
+#define USBPROC2_PROCESS_IDX 36
+
 #define DEVTYPE_MLC 0x5
+
+// boot_state
+#define CMPT_RETSTAT0 0x00100000
 
 int (*MCP_IVS_stuff)(void) = (void*)(0x0501c238|1);
 int (*MCP_MountWithSubdir)(char*, char*, char *, void*) = (void*) 0x05015c7c;
 int (*wait_for_dev)(const char*, u32) = (void*)(0x05016cd8|1);
+
+
+static bool shutdown_from_hai = false;
 
 int (*IOS_ResumeAsync)(int, int, int, void*, void*) = (void*)0x05056a1c;
 int resume_process(u32 i){
@@ -29,6 +38,22 @@ int resume_process(u32 i){
     *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
     return iosIpcResume(resource_handle_id, parm1, parm2);
     //return IOS_ResumeAsync(resource_handle_id, parm1, parm2, PM_MsgQueue, async_notify_request);
+}
+
+int suspend_mode, suspend_flags;
+
+int suspend_process(u32 pidx) {
+    int parm1=suspend_mode; //*(int*)0x050b7fc8;
+    int parm2=suspend_flags; //*(int*)0x050b7fc4;
+    u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
+    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*pidx;
+    int resource_handle_id = *(int*)(IOS_Process_Struct_base + 8);
+    *(int*)(IOS_Process_Struct_base + 0x10) = 5;
+    *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
+    const char* name = *(char**)(IOS_Process_Struct_base + 0x50);
+    int res = iosIpcSuspend(resource_handle_id, parm1, parm2);
+    debug_printf("Manually suspending Process %d (%s) returned %d\n", pidx, name, res);
+    return res;
 }
 
 void pm_system_resume_hook(trampoline_t_state *regs){
