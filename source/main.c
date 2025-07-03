@@ -146,7 +146,7 @@ void ums_devtype_hook(trampoline_state *regs){
     if(first){
         first = false;
         regs->r[3] = DEVTYPE_MLC;
-        usb_ifhandle_mlc = regs->r[7];
+        usb_ifhandle_mlc = *(int*)(regs->r[7] + 0x68);
         debug_printf("usb_ifhandle_mlc: %d\n", usb_ifhandle_mlc);
     }
 }
