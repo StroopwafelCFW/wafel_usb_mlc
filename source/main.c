@@ -12,6 +12,7 @@
 
 #define UMS_PROCESS_IDX 47
 #define USBPROC2_PROCESS_IDX 36
+#define PROCESS_STRUCT_SIZE 0x58
 
 #define DEVTYPE_MLC 0x5
 
@@ -31,7 +32,7 @@ int resume_process(u32 pidx){
     int mode=*(int*)0x050b7fc8;
     int flags=*(int*)0x050b7fc4;
     u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
-    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*pidx;
+    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 + PROCESS_STRUCT_SIZE*pidx;
     int resource_handle_id = *(int*)(IOS_Process_Struct_base + 8);
     *(int*)(IOS_Process_Struct_base + 0x10) = 5;
     *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
@@ -43,7 +44,7 @@ int resume_process(u32 pidx){
 static int suspend_mode, suspend_flags;
 
 int suspend_process(u32 pidx) {
-    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 +0x58*pidx;
+    u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 + PROCESS_STRUCT_SIZE*pidx;
     int resource_handle_id = *(int*)(IOS_Process_Struct_base + 8);
     *(int*)(IOS_Process_Struct_base + 0x10) = 5;
     *(int*)(IOS_Process_Struct_base + 0x4) = 0xfffffffc;
@@ -58,7 +59,7 @@ void pm_system_resume_hook(trampoline_t_state *regs){
 
 void pm_resume_count_hook(trampoline_t_state * regs){
     u32 pidx = regs->r[2];
-    char * name = *(char**)(0x050711b0 + 0x58*pidx +0x50);
+    char * name = *(char**)(0x050711b0 + PROCESS_STRUCT_SIZE*pidx +0x50);
     debug_printf("Resumed Process %d: %s\n", pidx, name);
 
     u32 *MCP_PM_mode_init =(u32*)0x0508775c;
@@ -146,12 +147,6 @@ void ums_devtype_hook(trampoline_state *regs){
         first = false;
     }
 }
-
-#define PROCESS_SIZE 0x58
-
-typedef struct proccess_struct {
-    u8 buff[PROCESS_SIZE];
-} PACKED proccess_struct;
 
 
 void tm_OpenDir_hook(trampoline_t_state* regs){
