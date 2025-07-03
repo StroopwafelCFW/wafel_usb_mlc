@@ -140,11 +140,22 @@ void ums_entry_hook(trampoline_state* regs){
     debug_printf("FSUMSServerEntry\n");
 }
 
+static int usb_ifhandle_mlc = 0;
 void ums_devtype_hook(trampoline_state *regs){
     static bool first = true;
     if(first){
-        regs->r[3] = DEVTYPE_MLC;
         first = false;
+        regs->r[3] = DEVTYPE_MLC;
+        usb_ifhandle_mlc = regs->r[7];
+        debug_printf("usb_ifhandle_mlc: %d\n", usb_ifhandle_mlc);
+    }
+}
+
+void uhs_filter_hook(trampoline_state *regs){
+    int if_handle = *(int*)(regs->r[4]+0x20);
+    debug_printf("uhs_filter hook %d, %d\n", if_handle, usb_ifhandle_mlc);
+    if(if_handle == usb_ifhandle_mlc){
+        regs->r[0] = 0;
     }
 }
 
@@ -224,6 +235,11 @@ void kern_main()
     trampoline_hook_before(0x1070077c, ums_entry_hook);
     // change type to MLC
     trampoline_hook_before(0x1077edac, ums_devtype_hook);
+    
+    // don't return MLC device on UHS QueryInterfaces
+    trampoline_hook_before(0x101161dc, uhs_filter_hook);
+    trampoline_hook_before(0x1011627c, uhs_filter_hook);
+    trampoline_hook_before(0x10116370, uhs_filter_hook);
 
     // Patch out MCP dependency of UMS. IVS Stuff need to be called elsewhere
     ASM_PATCH_K(0x1077dda0, "mov r0, #0"); // handle = MCP_open()
