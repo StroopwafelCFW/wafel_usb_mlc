@@ -65,14 +65,18 @@ void pm_resume_count_hook(trampoline_t_state * regs){
     u32 *MCP_PM_mode_init =(u32*)0x0508775c;
     debug_printf("MCP_PM_mode_init: %p\n", *MCP_PM_mode_init);
 
-    if(pidx == 1 && shutdown_from_hai){
-        *MCP_PM_mode_init = 0x100000;
-        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
-    }
+    if(shutdown_from_hai) {
+        static int org_pm_mode = 0x8000;
+        if(pidx == 1){
+            org_pm_mode = *MCP_PM_mode_init;
+            *MCP_PM_mode_init = 0x100000;
+            debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+        }
 
-    if(pidx == 4 && shutdown_from_hai){
-        *MCP_PM_mode_init = 0x8000;
-        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+        if(pidx == 4 && shutdown_from_hai){
+            *MCP_PM_mode_init = org_pm_mode;
+            debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+    }
     }
 
     regs->r[0] = regs->r[2];
