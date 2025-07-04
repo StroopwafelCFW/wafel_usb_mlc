@@ -14,6 +14,8 @@
 #define USBPROC2_PROCESS_IDX 36
 #define PROCESS_STRUCT_SIZE 0x58
 
+#define PM_MODE_NORMAL 0x0100000
+
 #define DEVTYPE_MLC 0x5
 
 // boot_state
@@ -24,12 +26,10 @@ int (*MCP_MountWithSubdir)(char*, char*, char *, void*) = (void*) 0x05015c7c;
 int (*wait_for_dev)(const char*, u32) = (void*)(0x05016cd8|1);
 
 
-static bool shutdown_from_hai = false;
-
-
 static u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
 int resume_process(u32 pidx){
-    int mode=*(int*)0x050b7fc8;
+    // always resume in normal mode
+    int mode=0x100000; //*(int*)0x050b7fc8;
     int flags=*(int*)0x050b7fc4;
     u32 IOS_Process_Struct_ARRAY_050711b0 = 0x050711b0;
     u32 IOS_Process_Struct_base = IOS_Process_Struct_ARRAY_050711b0 + PROCESS_STRUCT_SIZE*pidx;
@@ -65,20 +65,18 @@ void pm_resume_count_hook(trampoline_t_state * regs){
     u32 *MCP_PM_mode_init =(u32*)0x0508775c;
     debug_printf("MCP_PM_mode_init: %p\n", *MCP_PM_mode_init);
 
-    if(shutdown_from_hai) {
-        static int org_pm_mode = 0x8000;
-        if(pidx == 1){
-            org_pm_mode = *MCP_PM_mode_init;
-            *MCP_PM_mode_init = 0x100000;
-            debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
-        }
-
-        if(pidx == 4 && shutdown_from_hai){
-            *MCP_PM_mode_init = org_pm_mode;
-            debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
+    static int org_pm_mode = PM_MODE_NORMAL;
+    if(pidx == 1){
+        org_pm_mode = *MCP_PM_mode_init;
+        *MCP_PM_mode_init = PM_MODE_NORMAL;
+        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
     }
+    if(pidx == 4){
+        *MCP_PM_mode_init = org_pm_mode;
+        debug_printf("MCP_PM_mode_init set to %p\n", *MCP_PM_mode_init);
     }
 
+    // for offset_hook
     regs->r[0] = regs->r[2];
 }
 
@@ -115,6 +113,8 @@ int mcp_mlc_wait_hook(char* dev, int timeout){
     debug_printf("MLC Wait Hook: %s\n", dev);
     int res = MCP_IVS_stuff();
     debug_printf("MCP_IVS_stuff returned %d\n", res);
+    res = resume_process(USBPROC2_PROCESS_IDX);
+    debug_printf("Manually resuming USBPROC2 returned %d\n", res);
     res = resume_process(UMS_PROCESS_IDX);
     debug_printf("Manually resuming UMS returned %d\n", res);
     do {
@@ -133,7 +133,7 @@ int mcp_mlc_mount_hook(char* dev, char* bind_dir, char* mount_point, int owner, 
 void mcp_mlc_unmount_after_hook(trampoline_t_state *regs){
     debug_printf("MCP MLC Unmount returned %d\n", regs->r[0]);
     suspend_process(UMS_PROCESS_IDX);
-    suspend_process(36);
+    suspend_process(USBPROC2_PROCESS_IDX);
 }
 
 void ums_mcp_open_hook(trampoline_state *regs){
@@ -232,8 +232,8 @@ void kern_main()
     //ASM_T_PATCH_K(0x05027cc8, "nop\nnop");
 
     // Force UHS to reinit, even on reload
-    ASM_PATCH_K(0x10100c90, "nop");
-    ASM_PATCH_K(0x10100cb8, "nop");
+    // ASM_PATCH_K(0x10100c90, "nop");
+    // ASM_PATCH_K(0x10100cb8, "nop");
 
     trampoline_hook_before(0x1077dda4, ums_mcp_open_hook);
     trampoline_hook_before(0x1070077c, ums_entry_hook);
@@ -260,19 +260,6 @@ void kern_main()
 
     // trampoline_t_hook_before(0x050158dc, tm_OpenDir_hook);
     // trampoline_t_hook_before(0x05015850, tm_scan_hook);
-
-    boot_info_t *boot_info = (boot_info_t*)0x050a443b;
-    size_t boot_info_size;
-    int res = prsh_get_entry("boot_info", (void**)&boot_info, &boot_info_size);
-    if(res>=0 && boot_info_size>=12){
-        shutdown_from_hai = boot_info->boot_state & 0x00100000;
-        debug_printf("boot_state: %p\n", boot_info->boot_state);
-    }
-    else {
-        debug_printf("No valid boot_info found: %d, %p, %p\n", res, boot_info, boot_info_size);
-    }
-
-    debug_printf("done\n");
 }
 
 // This fn runs before MCP's main thread, and can be used
