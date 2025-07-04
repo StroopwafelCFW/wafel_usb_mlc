@@ -20,6 +20,9 @@
 
 #define DEVTYPE_MLC 0x5
 
+#define SEEPROM_IVS_SEED_START_WORD 0x58
+#define SEEPROM_IVS_SEED_WORDS 0x8
+
 // boot_state
 #define CMPT_RETSTAT0 0x00100000
 
@@ -166,6 +169,16 @@ void uhs_filter_hook(trampoline_state *regs){
     }
 }
 
+static int bsp_eeprom_write_hook(int idx, u8 instance, u16 data, int r3, int (*org_eeprom_write)(int,u8,u16)){
+    debug_printf("SEEPROM write bsp_eeprom_write(%d, %p, %p)\n", idx, instance, data);
+    // Ignore writes to the USB IVS seed
+    if(instance >= SEEPROM_IVS_SEED_START_WORD && instance < SEEPROM_IVS_SEED_START_WORD + SEEPROM_IVS_SEED_WORDS){
+        debug_printf("Ignoring SEEPROM write to IVS (%p)\n", instance);
+        return 0;
+    }
+    return org_eeprom_write(idx, instance, data);
+}  
+
 
 void tm_OpenDir_hook(trampoline_t_state* regs){
     debug_printf("TitleManager opening dir: %s\n", regs->r[1]);
@@ -259,6 +272,8 @@ void kern_main()
 
     // Make the Wii U think it's the kiosk which attaches the eMMC as mlcorig
     ASM_PATCH_K(0x10700044, "mov r0,#1 \n bx lr");
+
+    trampoline_blreplace(0xe600a46c, bsp_eeprom_write_hook);
 
 
     // trampoline_t_hook_before(0x050158dc, tm_OpenDir_hook);
