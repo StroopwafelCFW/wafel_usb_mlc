@@ -10,6 +10,8 @@
 #include <wafel/ios/svc.h>
 #include <wafel/ios/prsh.h>
 
+#include "sal.h"
+
 #define UMS_PROCESS_IDX 47
 #define USBPROC2_PROCESS_IDX 36
 #define PROCESS_STRUCT_SIZE 0x58
@@ -145,14 +147,15 @@ void ums_entry_hook(trampoline_state* regs){
 }
 
 static int usb_ifhandle_mlc = 0;
-void ums_devtype_hook(trampoline_state *regs){
+void ums_attach_hook(trampoline_state *regs){
     static bool first = true;
-    if(first){
-        first = false;
-        regs->r[3] = DEVTYPE_MLC;
-        usb_ifhandle_mlc = *(int*)(regs->r[7] + 0x68);
-        debug_printf("usb_ifhandle_mlc: %d\n", usb_ifhandle_mlc);
-    }
+    if(!first)
+        return;
+    first = false;
+    FSSALAttachDeviceArg *attach_arg = (FSSALAttachDeviceArg*)regs->r[0];
+    attach_arg->params.device_type = DEVTYPE_MLC;
+    usb_ifhandle_mlc = *(int*)(regs->r[7] + 0x68);
+    debug_printf("usb_ifhandle_mlc: %d\n", usb_ifhandle_mlc);
 }
 
 void uhs_filter_hook(trampoline_state *regs){
@@ -238,7 +241,7 @@ void kern_main()
     trampoline_hook_before(0x1077dda4, ums_mcp_open_hook);
     trampoline_hook_before(0x1070077c, ums_entry_hook);
     // change type to MLC
-    trampoline_hook_before(0x1077edac, ums_devtype_hook);
+    trampoline_hook_before(0x1077eea8, ums_attach_hook);
     
     // don't return MLC device on UHS QueryInterfaces
     trampoline_hook_before(0x101161dc, uhs_filter_hook);
