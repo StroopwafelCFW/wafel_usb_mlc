@@ -9,6 +9,7 @@
 #include <wafel/patch.h>
 #include <wafel/ios/svc.h>
 #include <wafel/ios/prsh.h>
+#include <wafel/hai.h>
 
 #include "sal.h"
 
@@ -19,6 +20,7 @@
 #define PM_MODE_NORMAL 0x0100000
 
 #define DEVTYPE_MLC 0x5
+#define DEVTYPE_USB 0x11
 
 #define SEEPROM_IVS_SEED_START_WORD 0x58
 #define SEEPROM_IVS_SEED_WORDS 0x8
@@ -232,6 +234,8 @@ void kern_main()
 
     // hai should always use USB
     trampoline_t_blreplace(0x051001d6, hai_path_sprintf_hook_force_usb);
+    hai_setdev(DEVTYPE_USB);
+    //ASM_PATCH_K(0x10707b60, "mov r0, #11")
 
     // also set umsBlkDevID for /dev/mlc01
     ASM_T_PATCH_K(0x05100054, "nop\nnop");
