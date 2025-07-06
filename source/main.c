@@ -212,6 +212,15 @@ static void hai_read_devid_snprintf_hook(trampoline_t_state *regs){
     regs->r[3] = regs->r[4];
 }
 
+static int fs_emmc_attach_filter_hook(FSSALAttachDeviceArg *attach_arg, int r1, int r2, int r3, int (*org_emmc_attach)(FSSALAttachDeviceArg*)){
+    int device_type = attach_arg->params.device_type;
+    debug_printf("fs_mlc_attach_filter_hook: devive_type: 0x%x server_handle: %p\n", device_type, attach_arg->server_handle);
+    if(device_type == DEVTYPE_MLC) {
+        return 0xFFF;
+    }
+    return org_emmc_attach(attach_arg);
+}
+
 // This fn runs before everything else in kernel mode.
 // It should be used to do extremely early patches
 // (ie to BSP and kernel, which launches before MCP)
@@ -275,7 +284,10 @@ void kern_main()
     ASM_PATCH_K(0x1074362c, "mov r3, #0x12");
 
     // Make the Wii U think it's the kiosk which attaches the eMMC as mlcorig
-    ASM_PATCH_K(0x10700044, "mov r0,#1 \n bx lr");
+    //ASM_PATCH_K(0x10700044, "mov r0,#1 \n bx lr");
+
+    // Only attach the eMMC if it's type isn't mlc
+    trampoline_blreplace(0x107bdae0, fs_emmc_attach_filter_hook);
 
     trampoline_blreplace(0xe600a46c, bsp_eeprom_write_hook);
 
