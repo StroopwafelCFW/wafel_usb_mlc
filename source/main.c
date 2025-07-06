@@ -12,15 +12,13 @@
 #include <wafel/hai.h>
 
 #include "sal.h"
+#include "wfs.h"
 
 #define UMS_PROCESS_IDX 47
 #define USBPROC2_PROCESS_IDX 36
 #define PROCESS_STRUCT_SIZE 0x58
 
 #define PM_MODE_NORMAL 0x0100000
-
-#define DEVTYPE_MLC 0x5
-#define DEVTYPE_USB 0x11
 
 #define SEEPROM_IVS_SEED_START_WORD 0x58
 #define SEEPROM_IVS_SEED_WORDS 0x8
@@ -152,15 +150,36 @@ void ums_entry_hook(trampoline_state* regs){
 }
 
 static int usb_ifhandle_mlc = 0;
+static void *usb_mlc_server_handle = 0;
 void ums_attach_hook(trampoline_state *regs){
     static bool first = true;
     if(!first)
         return;
     first = false;
     FSSALAttachDeviceArg *attach_arg = (FSSALAttachDeviceArg*)regs->r[0];
-    attach_arg->params.device_type = DEVTYPE_MLC;
+    usb_mlc_server_handle = attach_arg->server_handle;
+    attach_arg->params.device_type = SAL_DEVICE_MLC;
     usb_ifhandle_mlc = *(int*)(regs->r[7] + 0x68);
-    debug_printf("usb_ifhandle_mlc: %d\n", usb_ifhandle_mlc);
+    debug_printf("usb_ifhandle_mlc: %d, usb_mlc_server_handle: %p\n", usb_ifhandle_mlc, usb_mlc_server_handle);
+}
+
+static int mdblk_emmc_attach_filter_hook(FSSALAttachDeviceArg *attach_arg, int r1, int r2, int r3, int (*org_emmc_attach)(FSSALAttachDeviceArg*)){
+    int device_type = attach_arg->params.device_type;
+    debug_printf("fs_mlc_attach_filter_hook: devive_type: 0x%x server_handle: %p\n", device_type, attach_arg->server_handle);
+    if(device_type == SAL_DEVICE_MLC) {
+        return 0xFFF;
+    }
+    return org_emmc_attach(attach_arg);
+}
+
+static void wfs_initDeviceParams_exit_hook(trampoline_state *regs){
+    WFS_Device *wfs_device = (WFS_Device*)regs->r[5];
+    FSSALDevice *sal_device = FSSAL_LookupDevice(wfs_device->handle);
+    void *server_handle = sal_device->server_handle;
+    debug_printf("wfs_initDeviceParams_exit_hook server_handle: %p\n", server_handle);
+    if(server_handle == usb_mlc_server_handle) {
+        wfs_device->crypto_key_handle = WFS_KEY_HANDLE_USB;
+    }
 }
 
 void uhs_filter_hook(trampoline_state *regs){
@@ -212,15 +231,6 @@ static void hai_read_devid_snprintf_hook(trampoline_t_state *regs){
     regs->r[3] = regs->r[4];
 }
 
-static int fs_emmc_attach_filter_hook(FSSALAttachDeviceArg *attach_arg, int r1, int r2, int r3, int (*org_emmc_attach)(FSSALAttachDeviceArg*)){
-    int device_type = attach_arg->params.device_type;
-    debug_printf("fs_mlc_attach_filter_hook: devive_type: 0x%x server_handle: %p\n", device_type, attach_arg->server_handle);
-    if(device_type == DEVTYPE_MLC) {
-        return 0xFFF;
-    }
-    return org_emmc_attach(attach_arg);
-}
-
 // This fn runs before everything else in kernel mode.
 // It should be used to do extremely early patches
 // (ie to BSP and kernel, which launches before MCP)
@@ -243,7 +253,7 @@ void kern_main()
 
     // hai should always use USB
     trampoline_t_blreplace(0x051001d6, hai_path_sprintf_hook_force_usb);
-    hai_setdev(DEVTYPE_USB);
+    hai_setdev(SAL_DEVICE_USB);
     //ASM_PATCH_K(0x10707b60, "mov r0, #11")
 
     // also set umsBlkDevID for /dev/mlc01
@@ -281,13 +291,14 @@ void kern_main()
     ASM_PATCH_K(0x1077dfd4, "nop"); // MCP_Close(handle)
  
     // Use crypto handle for USB (0x12) for the mlc type (originally 0x11)
-    ASM_PATCH_K(0x1074362c, "mov r3, #0x12");
+    //ASM_PATCH_K(0x1074362c, "mov r3, #0x12");
+    trampoline_hook_before(0x107435f4, wfs_initDeviceParams_exit_hook);
 
     // Make the Wii U think it's the kiosk which attaches the eMMC as mlcorig
     //ASM_PATCH_K(0x10700044, "mov r0,#1 \n bx lr");
 
     // Only attach the eMMC if it's type isn't mlc
-    trampoline_blreplace(0x107bdae0, fs_emmc_attach_filter_hook);
+    trampoline_blreplace(0x107bdae0, mdblk_emmc_attach_filter_hook);
 
     trampoline_blreplace(0xe600a46c, bsp_eeprom_write_hook);
 
