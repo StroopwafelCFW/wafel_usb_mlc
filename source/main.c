@@ -150,7 +150,7 @@ void ums_entry_hook(trampoline_state* regs){
 }
 
 static int usb_ifhandle_mlc = 0;
-static void *usb_mlc_server_handle = 0;
+static void *usb_mlc_server_handle = (void*) 0xFFFFFFFF;
 void ums_attach_hook(trampoline_state *regs){
     static bool first = true;
     if(!first)
