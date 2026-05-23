@@ -159,8 +159,10 @@ void ums_attach_hook(trampoline_state *regs){
     FSSALAttachDeviceArg *attach_arg = (FSSALAttachDeviceArg*)regs->r[0];
     usb_mlc_server_handle = attach_arg->server_handle;
     attach_arg->params.device_type = SAL_DEVICE_MLC;
+    
+    usb_ifhandle_mlc = *(int*)((u32)usb_mlc_server_handle + 0x68);
     // usb_ifhandle_mlc = *(int*)(regs->r[7] + 0x68);
-    debug_printf("usb_mlc_server_handle: %p\n", usb_mlc_server_handle);
+    debug_printf("usb_ifhandle_mlc: %d, usb_mlc_server_handle: %p\n", usb_ifhandle_mlc, usb_mlc_server_handle);
 }
 
 static int mdblk_emmc_attach_filter_hook(FSSALAttachDeviceArg *attach_arg, int r1, int r2, int r3, int (*org_emmc_attach)(FSSALAttachDeviceArg*)){
