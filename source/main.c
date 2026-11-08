@@ -27,7 +27,8 @@
 #define CMPT_RETSTAT0 0x00100000
 
 int (*MCP_IVS_stuff)(void) = (void*)(0x0501c238|1);
-int (*MCP_MountWithSubdir)(char*, char*, char *, void*) = (void*) 0x05015c7c;
+int (*MCP_MountWithSubdir)(char*, char*, char *, void*) = (void*) (0x05015c7c|1); // Thumb
+void (*MCP_UnmountFS)(char*, char*, void*, u32) = (void*) (0x05015b20|1);
 int (*wait_for_dev)(const char*, u32) = (void*)(0x05016cd8|1);
 
 
@@ -126,6 +127,62 @@ int mcp_mlc_wait_hook(char* dev, int timeout){
         debug_printf("Waiting for %s\n", dev);
     } while(res = wait_for_dev(dev, 1500000));
     debug_printf("Device %s found\n", dev);
+    return res;
+}
+
+/*
+ * Boot Recovery (e.g. wafel_recovery_setup): the recovery thread's resume
+ * (MCP_DRThreadEntry, IOS_RESUME case) has its own wait_for_dev("/dev/mlc01",
+ * 15 s) at 0x0510f56e. PM resumes /dev/mcp_recovery before /dev/usbproc2 and
+ * /dev/ums and blocks on it, so the USB MLC can't attach in time: the wait
+ * fails with -32, resume skips the mounts and ES/install init, and a recovery
+ * update fails in "stop ES" (hardware, 2026-11-08). Same fix as the normal boot
+ * hook, plus two recovery specifics:
+ *  - the recovery thread answers MCP ioctl 0x7e with a fixed default IVS, so the
+ *    real IVS has to come from MCP_IVS_stuff (UMS's own 0x7e call is patched out
+ *    above anyway);
+ *  - at this point recovery hasn't mounted /vol/system_slc yet, but
+ *    MCP_IVS_stuff may read /vol/system_slc/security/ivs.bin. Mount it for the
+ *    call and unmount it again, so recovery's own mount later still works.
+ * If the IVS can't be set, the USB MLC is not brought up (formatting/installing
+ * with the wrong key would make the drive unreadable on a normal boot); the
+ * wait then fails as before and recovery shows its menu.
+ * The wait is capped at DR_MLC_WAIT_TRIES * 1.5 s so a missing drive ends on the
+ * recovery screen instead of hanging.
+ */
+#define DR_MLC_WAIT_TRIES 200   /* 5 minutes */
+
+/* FSA owner recovery uses for its system mounts (rodata 0x05066e6c). A NULL
+ * owner is refused with FSA_STATUS_PERMISSION_ERROR (-0x3001a) here (hardware). */
+static u32 dr_owner[4] = { 0, 0, 1, 0 };
+
+int mcp_dr_mlc_wait_hook(const char* dev, u32 timeout, int r2, int r3, int (*org_wait)(const char*, u32)){
+    debug_printf("Recovery MLC Wait Hook: %s\n", dev);
+    int mount_res = MCP_MountWithSubdir("/dev/slc01", "sys", "/vol/system_slc", dr_owner);
+    debug_printf("Recovery: mount /vol/system_slc returned %d\n", mount_res);
+    int ivs_res = MCP_IVS_stuff();
+    debug_printf("Recovery: MCP_IVS_stuff returned %d\n", ivs_res);
+    if (mount_res == 0) {
+        MCP_UnmountFS(NULL, "/vol/system_slc", dr_owner, 0x80000000);
+        debug_printf("Recovery: unmounted /vol/system_slc\n");
+    }
+    if (ivs_res != 0) {
+        debug_printf("Recovery: IVS not set, not bringing up the USB MLC\n");
+        return org_wait(dev, timeout);
+    }
+    int res = resume_process(USBPROC2_PROCESS_IDX);
+    debug_printf("Recovery: manually resuming USBPROC2 returned %d\n", res);
+    res = resume_process(UMS_PROCESS_IDX);
+    debug_printf("Recovery: manually resuming UMS returned %d\n", res);
+    for (int i = 0; i < DR_MLC_WAIT_TRIES; i++) {
+        res = org_wait(dev, 1500000);
+        if (res == 0) {
+            debug_printf("Recovery: device %s found\n", dev);
+            return 0;
+        }
+        debug_printf("Recovery: waiting for %s (%d)\n", dev, i);
+    }
+    debug_printf("Recovery: %s not found, giving up (%d)\n", dev, res);
     return res;
 }
 
@@ -265,6 +322,8 @@ void kern_main()
     trampoline_t_hook_before(0x05100062, hai_read_devid_snprintf_hook);
 
     trampoline_t_blreplace(0x05027d18, mcp_mlc_wait_hook);
+    // same for the Boot Recovery thread's resume (bl wait_for_dev("/dev/mlc01"))
+    trampoline_t_blreplace(0x0510f56e, mcp_dr_mlc_wait_hook);
     trampoline_t_blreplace(0x05027d54, mcp_mlc_mount_hook);
     trampoline_t_hook_before(0x050283aa, mcp_mlc_unmount_after_hook);
 
